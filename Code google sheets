@@ -1,0 +1,102 @@
+function doPost(e) {
+  var dados = JSON.parse(e.postData.contents); // Recebe os dados POST
+  var spreadsheetId = ""; // Substitua pelo ID da sua planilha
+  var sheetName = "HDs"; // Substitua pelo nome da sua folha
+
+  if (dados && dados.length > 0) {
+    var ss = SpreadsheetApp.openById(spreadsheetId);
+    var sheet = ss.getSheetByName(sheetName);
+
+    if (!sheet) {
+      return ContentService.createTextOutput("Folha '" + sheetName + "' não encontrada.")
+        .setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    // Prepara os dados para inserção em lote
+    var rows = dados.map(function(item) {
+      return [item.disk_id, item.arquivo, item.memoria_livre.toFixed(2)]; // Adiciona precisão a memória
+    });
+
+    // Adiciona as linhas em uma única operação
+    sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, 3).setValues(rows);
+
+    return ContentService.createTextOutput("Sucesso").setMimeType(ContentService.MimeType.TEXT);
+  } else {
+    return ContentService.createTextOutput("Nenhum dado encontrado para escrever na planilha.")
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
+}
+
+function doGet(e) {
+  var planilha = SpreadsheetApp.openById("");
+  var sheet = planilha.getSheetByName("HDs");
+  var logSheet = planilha.getSheetByName("Log");
+
+  try {
+    if (!sheet) {
+      registrarLog(logSheet, "Erro", "Planilha HDs não encontrada.");
+      return ContentService.createTextOutput("Erro: Planilha não encontrada").setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    var dados = {};
+    var rows = sheet.getDataRange().getValues();
+    rows.shift(); // Remove cabeçalho
+
+    rows.forEach(function(row, index) {
+      try {
+        var nomeDisco = row[0];
+        var arquivo = row[1];
+        var memoriaLivre = parseFloat(row[2]); // Tenta converter para número
+
+        if (isNaN(memoriaLivre)) { // Verifica se não é um número
+          registrarLog(logSheet, "Erro", "Memória livre não é um número válido na linha " + (index + 2));
+          memoriaLivre = 0; // Define como 0 para evitar erros futuros
+        }
+
+        if (!dados[nomeDisco]) {
+          dados[nomeDisco] = {
+            arquivos: [],
+            memoria_livre: memoriaLivre
+          };
+        }
+
+        dados[nomeDisco].arquivos.push(arquivo);
+        dados[nomeDisco].memoria_livre = memoriaLivre;
+      } catch (rowError) {
+        registrarLog(logSheet, "Erro", "Erro ao processar linha " + (index + 2) + ": " + rowError.message);
+      }
+    });
+
+    registrarLog(logSheet, "Sucesso", "Dados enviados com sucesso.");
+    return ContentService.createTextOutput(JSON.stringify(dados)).setMimeType(ContentService.MimeType.JSON);
+  } catch (error) {
+    registrarLog(logSheet, "Erro", "Falha ao processar GET: " + error.message);
+    return ContentService.createTextOutput("Erro ao processar os dados").setMimeType(ContentService.MimeType.TEXT);
+  }
+}
+
+function registrarLog(sheet, status, mensagem) {
+  try {
+    sheet.appendRow([new Date(), status, mensagem]);
+  } catch (logError) {
+    Logger.log("Erro ao registrar log: " + logError.message);
+  }
+}
+
+function registrarLog(sheet, status, mensagem) {
+  try {
+    sheet.appendRow([new Date(), status, mensagem]);
+  } catch (logError) {
+    Logger.log("Erro ao registrar log: " + logError.message);
+  }
+}
+
+function registrarLog(sheet, status, mensagem) {
+  sheet.appendRow([new Date(), status, mensagem]);
+}
+
+function registrarLog(sheet, tipo, mensagem) {
+  var agora = new Date();
+  sheet.appendRow([agora, tipo, mensagem]);
+}
+
