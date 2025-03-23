@@ -16,20 +16,36 @@ monitorando = False
 REGISTRO_ARQUIVOS = "registro_hd.json"
 CONFIG_ARQUIVO = "config.json"
 
+
 # Funções para salvar e carregar configurações
 def salvar_configuracoes(url, discos):
     config = {"url": url, "discos": discos}
-    with open(CONFIG_ARQUIVO, "w") as f:
+
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+
+    config_path = os.path.join(base_path, CONFIG_ARQUIVO)
+
+    with open(config_path, "w") as f:
         json.dump(config, f)
+
 
 def carregar_configuracoes():
     try:
-        with open(CONFIG_ARQUIVO, "r") as f:
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+
+        config_path = os.path.join(base_path, CONFIG_ARQUIVO)
+
+        with open(config_path, "r") as f:
             config = json.load(f)
             return config["url"], config.get("discos", [])
     except FileNotFoundError:
-        return "",  ["C","D"]  # Valores padrão
-
+        return "", ["C", "D"]  # Valores padrão
 # Carregar configurações no início do programa
 GOOGLE_SHEETS_URL, discos_ignorados = carregar_configuracoes()
 
@@ -104,14 +120,18 @@ def sair(icon, item):
 # Função para ocultar a janela quando o X for clicado
 def on_closing():
     janela.withdraw()  # Minimiza a janela
+
+
 def carregar_registro():
     """Carrega os registros locais ou cria um novo se não existir."""
+    # Use the application directory for the JSON file, not the temporary directory
     if getattr(sys, 'frozen', False):
-        # Estamos rodando como um executável
-        base_path = sys._MEIPASS
+        # We're running as an executable
+        base_path = os.path.dirname(sys.executable)
     else:
-        # Estamos rodando como um script
+        # We're running as a script
         base_path = os.path.dirname(os.path.abspath(__file__))
+
     registro_path = os.path.join(base_path, REGISTRO_ARQUIVOS)
     if os.path.exists(registro_path):
         try:
@@ -139,9 +159,16 @@ def salvar_registro(disk_id, arquivos, memoria_livre):
 
     dados[disk_id]["memoria_livre"] = memoria_livre
 
-    with open(REGISTRO_ARQUIVOS, "w", encoding="utf-8") as f:
-        json.dump(dados, f, indent=4, ensure_ascii=False)
+    # Get the correct path for saving
+    if getattr(sys, 'frozen', False):
+        base_path = os.path.dirname(sys.executable)
+    else:
+        base_path = os.path.dirname(os.path.abspath(__file__))
 
+    registro_path = os.path.join(base_path, REGISTRO_ARQUIVOS)
+
+    with open(registro_path, "w", encoding="utf-8") as f:
+        json.dump(dados, f, indent=4, ensure_ascii=False)
 
 def encontrar_hd():
     global discos_ignorados
@@ -151,6 +178,7 @@ def encontrar_hd():
         if os.path.exists(caminho) and letra not in discos_ignorados:
             unidades.append(caminho)
     return unidades
+
 
 def sincronizar_com_planilha():
     """Sincroniza os dados entre a planilha do Google e o arquivo JSON."""
@@ -191,8 +219,16 @@ def sincronizar_com_planilha():
             if dados_planilha[disk_id]['arquivos'] != dados_locais[disk_id]['arquivos']:
                 dados_locais[disk_id]['arquivos'] = dados_planilha[disk_id]['arquivos']
 
+        # Get the correct path for saving
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+
+        registro_path = os.path.join(base_path, REGISTRO_ARQUIVOS)
+
         # Atualizar arquivo JSON
-        with open(REGISTRO_ARQUIVOS, "w", encoding="utf-8") as f:
+        with open(registro_path, "w", encoding="utf-8") as f:
             json.dump(dados_locais, f, indent=4, ensure_ascii=False)
 
         print("✅ Dados sincronizados com sucesso.")
@@ -277,24 +313,39 @@ def buscar_arquivos(event=None):
         texto_json.insert(tk.END, "Nenhum arquivo encontrado para o termo de busca.\n", "info")
 
 # Função para exibir todos os arquivos de um disco quando ele for clicado
+# Add these at the beginning of functions like mostrar_arquivos, atualizar_lista_discos, etc.
 def mostrar_arquivos(event=None):
-    selecionado = lista_discos.curselection()
-    if not selecionado:
-        return
-    disk_info = lista_discos.get(selecionado[0])
-    disk_id = disk_info.split(" -")[0].replace("HD: ", "")  # Extraindo o ID do disco
-    dados = carregar_registro()
+    try:
+        selecionado = lista_discos.curselection()
+        if not selecionado:
+            return
+        disk_info = lista_discos.get(selecionado[0])
+        disk_id = disk_info.split(" -")[0].replace("HD: ", "")  # Extraindo o ID do disco
+        dados = carregar_registro()
 
-    if disk_id in dados:
-        arquivos = dados[disk_id]['arquivos']
-        memoria_livre = dados[disk_id]['memoria_livre']
-        texto_json.delete("1.0", tk.END)  # Limpa a área de detalhes de arquivos
-        texto_json.insert(tk.END, f"HD: {disk_id}\n", "titulo")
-        texto_json.insert(tk.END, f"Memória Livre: {memoria_livre:.2f} MB\n", "info")
-        texto_json.insert(tk.END, "Arquivos:\n", "subtitulo")
+        # Debugging
+        if not dados:
+            texto_json.delete("1.0", tk.END)
+            texto_json.insert(tk.END, "ERRO: Nenhum dado encontrado no registro.\n", "info")
+            return
 
-        for arq in arquivos:
-            texto_json.insert(tk.END, f"- {arq}\n", "item")
+        if disk_id in dados:
+            arquivos = dados[disk_id]['arquivos']
+            memoria_livre = dados[disk_id]['memoria_livre']
+            texto_json.delete("1.0", tk.END)  # Limpa a área de detalhes de arquivos
+            texto_json.insert(tk.END, f"HD: {disk_id}\n", "titulo")
+            texto_json.insert(tk.END, f"Memória Livre: {memoria_livre:.2f} MB\n", "info")
+            texto_json.insert(tk.END, "Arquivos:\n", "subtitulo")
+
+            for arq in arquivos:
+                texto_json.insert(tk.END, f"- {arq}\n", "item")
+        else:
+            texto_json.delete("1.0", tk.END)
+            texto_json.insert(tk.END, f"ERRO: Disco {disk_id} não encontrado no registro.\n", "info")
+
+    except Exception as e:
+        texto_json.delete("1.0", tk.END)
+        texto_json.insert(tk.END, f"ERRO: {str(e)}\n", "info")
 
 
 def obter_memoria_livre():
