@@ -6,16 +6,54 @@ import time
 import requests
 import win32api
 import tkinter as tk
-from tkinter import ttk, Text, Scrollbar
+from tkinter import ttk, Text, Scrollbar, simpledialog, messagebox
 import threading
 from pystray import Icon, MenuItem, Menu
 from PIL import Image, ImageDraw, ImageTk  # Importar ImageTk
 import sys
-
-# Variável global para controlar o monitoramento
+# Variáveis globais
 monitorando = False
 REGISTRO_ARQUIVOS = "registro_hd.json"
-GOOGLE_SHEETS_URL = ""
+CONFIG_ARQUIVO = "config.json"
+
+# Funções para salvar e carregar configurações
+def salvar_configuracoes(url, discos):
+    config = {"url": url, "discos": discos}
+    with open(CONFIG_ARQUIVO, "w") as f:
+        json.dump(config, f)
+
+def carregar_configuracoes():
+    try:
+        with open(CONFIG_ARQUIVO, "r") as f:
+            config = json.load(f)
+            return config["url"], config["discos"]
+    except FileNotFoundError:
+        return "", ["C:\\"]  # Valores padrão
+
+# Carregar configurações no início do programa
+GOOGLE_SHEETS_URL, discos_ignorados = carregar_configuracoes()
+
+
+# Função para alterar a URL do Google Sheets
+def alterar_url():
+    global GOOGLE_SHEETS_URL  # Mova a declaração global para o início da função
+    nova_url = simpledialog.askstring("Alterar URL", "Digite a nova URL do Google Sheets:", initialvalue=GOOGLE_SHEETS_URL)
+    if nova_url:
+        GOOGLE_SHEETS_URL = nova_url
+        salvar_configuracoes(GOOGLE_SHEETS_URL, discos_ignorados)
+        messagebox.showinfo("URL Alterada", "A URL do Google Sheets foi alterada.")
+
+# Função para alterar os discos ignorados
+def alterar_discos_ignorados():
+    global discos_ignorados  # Mova a declaração global para o início da função
+    discos_str = ",".join(discos_ignorados)
+    novos_discos = simpledialog.askstring("Alterar Discos Ignorados", "Digite os discos ignorados (separados por vírgulas):", initialvalue=discos_str)
+    if novos_discos:
+        discos_ignorados = novos_discos.split(",")
+        salvar_configuracoes(GOOGLE_SHEETS_URL, discos_ignorados)
+        messagebox.showinfo("Discos Ignorados Alterados", "Os discos ignorados foram alterados.")
+
+
 
 # Função para carregar o ícone para a barra de título
 def carregar_icone_janela():
@@ -55,6 +93,7 @@ def abrir_janela(icon, item):
     janela.after(0, lambda: janela.deiconify())  # Abertura da janela agendada no thread principal
     icon.stop()  # Para o ícone da bandeja
 
+# Função para sair do programa
 # Função para sair do programa
 def sair(icon, item):
     global monitorando
@@ -115,6 +154,10 @@ def salvar_registro(disk_id, arquivos, memoria_livre):
 
 def sincronizar_com_planilha():
     """Sincroniza os dados entre a planilha do Google e o arquivo JSON."""
+    if not GOOGLE_SHEETS_URL:
+        print("⚠️ URL do Google Sheets não configurada. Sincronização não disponível.")
+        return
+
     try:
         # Obter dados da planilha
         response = requests.get(GOOGLE_SHEETS_URL)
@@ -162,7 +205,6 @@ def sincronizar_com_planilha():
     texto_json.insert(tk.END, "Dados sincronizados com sucesso.\n", "info")
 
 
-
 def listar_arquivos(diretorio):
     arquivos_e_pastas = []
     try:
@@ -174,10 +216,10 @@ def listar_arquivos(diretorio):
     return arquivos_e_pastas
 
 def encontrar_hd():
+    global discos_ignorados
     unidades = []
-    discos_ignorados = ["C:\\", "D:\\", "M:\\"]
     for letra in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-        caminho = f"{letra}:\\"  # Verifica cada letra de A-Z
+        caminho = f"{letra}:\\"
         if os.path.exists(caminho) and caminho not in discos_ignorados:
             unidades.append(caminho)
     return unidades
@@ -329,6 +371,7 @@ cor_fundo = "#1e1e1e"
 cor_texto = "#ffffff"
 cor_lista = "#333333"
 cor_destaque = "#007acc"
+cor_config ="#00ac47"
 
 # Configuração da barra de pesquisa
 barra_busca = tk.Entry(janela, width=40, bg=cor_lista, fg=cor_texto, borderwidth=0)
@@ -355,6 +398,14 @@ btn_parar.pack(pady=5)
 btn_sincronizar = tk.Button(janela, text="Sincronizar Dados", command=sincronizar_com_planilha, bg=cor_destaque, fg=cor_texto, relief="flat")
 btn_sincronizar.pack(pady=5)
 
+# Botão para alterar a URL do Google Sheets
+btn_alterar_url = tk.Button(janela, text="Alterar URL do Google Sheets", command=alterar_url, bg=cor_config, fg=cor_texto, relief="flat")
+btn_alterar_url.pack(pady=5)
+
+# Botão para alterar os discos ignorados
+btn_alterar_discos = tk.Button(janela, text="Alterar Discos Ignorados", command=alterar_discos_ignorados, bg=cor_config, fg=cor_texto, relief="flat")
+btn_alterar_discos.pack(pady=5)
+
 # Após a inicialização da interface, chame buscar_arquivos para garantir que todos os discos sejam carregados
 buscar_arquivos()
 
@@ -367,6 +418,6 @@ icone_bandeja = create_icon()
 icone_bandeja.run_detached()
 
 # Inicia a interface gráfica
-janela.protocol("WM_DELETE_WINDOW", on_closing)  # Trata o evento de fechar a janela
+janela.protocol("WM_DELETE_WINDOW", on_closing)
 janela.mainloop()
 
