@@ -124,22 +124,39 @@ def carregar_registro():
         return {}
 
 def salvar_registro(disk_id, arquivos, memoria_livre):
-    """Salva os registros localmente e envia para o Google Sheets via API."""
+    """Salva os registros localmente e envia para o Google Sheets via API, evitando duplicatas."""
     dados = carregar_registro()
-    dados[disk_id] = {"arquivos": arquivos, "memoria_livre": memoria_livre}
+
+    arquivos_novos = []  # Inicializa arquivos_novos com uma lista vazia
+
+    # Verifica se o disco já está no registro
+    if disk_id in dados:
+        # Verifica se os arquivos já estão no registro
+        arquivos_existentes = set(dados[disk_id]["arquivos"])
+        arquivos_novos = [arq for arq in arquivos if arq not in arquivos_existentes]
+
+        # Adiciona apenas os arquivos novos
+        dados[disk_id]["arquivos"].extend(arquivos_novos)
+    else:
+        dados[disk_id] = {"arquivos": arquivos, "memoria_livre": memoria_livre}
+
+    # Atualiza a memória livre
+    dados[disk_id]["memoria_livre"] = memoria_livre
 
     # Salva localmente
     with open(REGISTRO_ARQUIVOS, "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=4, ensure_ascii=False)
 
-    # Prepara os dados para envio ao Google Sheets
+    # Prepara os dados para envio ao Google Sheets (envia apenas os novos arquivos)
     dados_para_enviar = []
-    for arquivo in arquivos:
-        dados_para_enviar.append({
-            "disk_id": disk_id,
-            "arquivo": arquivo,
-            "memoria_livre": memoria_livre
-        })
+    if disk_id in dados:
+        arquivos_a_enviar = dados[disk_id]["arquivos"] if not arquivos_novos else arquivos_novos # corrigido a lógica aqui também.
+        for arquivo in arquivos_a_enviar:
+            dados_para_enviar.append({
+                "disk_id": disk_id,
+                "arquivo": arquivo,
+                "memoria_livre": memoria_livre
+            })
 
     # Envia para Google Sheets
     try:
@@ -221,7 +238,7 @@ def encontrar_hd():
     unidades = []
     for letra in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
         caminho = f"{letra}:\\"
-        if os.path.exists(caminho) and caminho not in discos_ignorados:
+        if os.path.exists(caminho) and caminho.lower() not in [disco.lower() for disco in discos_ignorados]: # adicionado o .lower() para evitar erros de case sensitive
             unidades.append(caminho)
     return unidades
 
