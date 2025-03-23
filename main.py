@@ -16,7 +16,6 @@ monitorando = False
 REGISTRO_ARQUIVOS = "registro_hd.json"
 CONFIG_ARQUIVO = "config.json"
 
-
 # Funções para salvar e carregar configurações
 def salvar_configuracoes(url, discos):
     config = {"url": url, "discos": discos}
@@ -27,9 +26,9 @@ def carregar_configuracoes():
     try:
         with open(CONFIG_ARQUIVO, "r") as f:
             config = json.load(f)
-            return config["url"], config["discos"]
+            return config["url"], config.get("discos", [])
     except FileNotFoundError:
-        return "", ["C:\\"]  # Valores padrão
+        return "",  ["C","D"]  # Valores padrão
 
 # Carregar configurações no início do programa
 GOOGLE_SHEETS_URL, discos_ignorados = carregar_configuracoes()
@@ -123,52 +122,35 @@ def carregar_registro():
     else:
         return {}
 
+
 def salvar_registro(disk_id, arquivos, memoria_livre):
-    """Salva os registros localmente e envia para o Google Sheets via API, evitando duplicatas."""
+    if disk_id.lower() in [disco.lower() for disco in discos_ignorados]:
+        return
+
     dados = carregar_registro()
+    arquivos_novos = []
 
-    arquivos_novos = []  # Inicializa arquivos_novos com uma lista vazia
-
-    # Verifica se o disco já está no registro
     if disk_id in dados:
-        # Verifica se os arquivos já estão no registro
         arquivos_existentes = set(dados[disk_id]["arquivos"])
         arquivos_novos = [arq for arq in arquivos if arq not in arquivos_existentes]
-
-        # Adiciona apenas os arquivos novos
         dados[disk_id]["arquivos"].extend(arquivos_novos)
     else:
         dados[disk_id] = {"arquivos": arquivos, "memoria_livre": memoria_livre}
 
-    # Atualiza a memória livre
     dados[disk_id]["memoria_livre"] = memoria_livre
 
-    # Salva localmente
     with open(REGISTRO_ARQUIVOS, "w", encoding="utf-8") as f:
         json.dump(dados, f, indent=4, ensure_ascii=False)
 
-    # Prepara os dados para envio ao Google Sheets (envia apenas os novos arquivos)
-    dados_para_enviar = []
-    if disk_id in dados:
-        arquivos_a_enviar = dados[disk_id]["arquivos"] if not arquivos_novos else arquivos_novos # corrigido a lógica aqui também.
-        for arquivo in arquivos_a_enviar:
-            dados_para_enviar.append({
-                "disk_id": disk_id,
-                "arquivo": arquivo,
-                "memoria_livre": memoria_livre
-            })
 
-    # Envia para Google Sheets
-    try:
-        response = requests.post(GOOGLE_SHEETS_URL, json=dados_para_enviar)
-        print(f"Resposta do Google Sheets: {response.status_code} - {response.text}")
-        if response.status_code == 200:
-            print("✅ Dados enviados para o Google Sheets com sucesso.")
-        else:
-            print(f"⚠️ Erro ao enviar para o Google Sheets: {response.status_code}")
-            print("Resposta detalhada:", response.json())
-    except Exception as e:
-        print(f"⚠️ Erro ao se conectar com o Google Sheets: {e}")
+def encontrar_hd():
+    global discos_ignorados
+    unidades = []
+    for letra in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        caminho = f"{letra}:\\"
+        if os.path.exists(caminho) and letra not in discos_ignorados:
+            unidades.append(caminho)
+    return unidades
 
 def sincronizar_com_planilha():
     """Sincroniza os dados entre a planilha do Google e o arquivo JSON."""
@@ -245,7 +227,7 @@ def encontrar_hd():
 
 def get_disk_id(drive):
     try:
-        return win32api.GetVolumeInformation(drive)[0] or drive
+        return drive[0]
     except:
         return drive
 
@@ -327,18 +309,17 @@ def forcar_busca_atualizacao():
 
 # Função de monitoramento contínuo
 def monitorar_hd():
-    """Monitora as mudanças de discos conectados e atualiza o registro automaticamente."""
     hd_detectados = set()
     hd_previos = set()
 
-    while monitorando:  # Verifica a variável global 'monitorando'
-        # Verifica as unidades conectadas
+    while monitorando:
         unidades_conectadas = set(encontrar_hd())
 
-        # Detecta discos conectados novos
         novos_hd = unidades_conectadas - hd_previos
         for caminho in novos_hd:
             disk_id = get_disk_id(caminho)
+            if disk_id.lower() in [disco.lower() for disco in discos_ignorados]:
+                continue
             if disk_id and disk_id not in hd_detectados:
                 arquivos_total = listar_arquivos(caminho)
                 memoria_livre = obter_memoria_livre()
@@ -349,7 +330,6 @@ def monitorar_hd():
                     print(f"📊 Memória livre no momento da conexão: {memoria_livre:.2f} MB")
                     hd_detectados.add(disk_id)
 
-        # Detecta discos desconectados
         hd_desconectados = hd_previos - unidades_conectadas
         for caminho in hd_desconectados:
             disk_id = get_disk_id(caminho)
@@ -357,10 +337,9 @@ def monitorar_hd():
                 print(f"⚠️ HD desconectado '{disk_id}'")
                 hd_detectados.remove(disk_id)
 
-        # Atualiza a lista de discos
         hd_previos = unidades_conectadas
 
-        time.sleep(5)  # Aguarda 5 segundos antes de verificar novamente
+        time.sleep(5)
 
 
 def iniciar_monitoramento():
