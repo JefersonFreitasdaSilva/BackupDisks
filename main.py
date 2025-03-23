@@ -16,6 +16,7 @@ monitorando = False
 REGISTRO_ARQUIVOS = "registro_hd.json"
 CONFIG_ARQUIVO = "config.json"
 
+
 # Funções para salvar e carregar configurações
 def salvar_configuracoes(url, discos):
     config = {"url": url, "discos": discos}
