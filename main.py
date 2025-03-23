@@ -233,6 +233,7 @@ def listar_arquivos(diretorio):
         print(f"Erro ao listar arquivos/pastas em {diretorio}: {e}")
     return arquivos_e_pastas
 
+
 def encontrar_hd():
     global discos_ignorados
     unidades = []
